@@ -115,11 +115,10 @@ public class ModuleManager {
     try {
       createUsers();
       resolve(true);
+      final List<Module> newlyInstalledModules = new ArrayList<>();
       Beans.get(AuditableRunner.class)
           .run(
               () -> {
-                final List<Module> newlyInstalledModules = new ArrayList<>();
-
                 // install modules
                 resolver.all().stream()
                     .filter(m -> !m.isRemovable() || m.isInstalled())
@@ -143,6 +142,7 @@ public class ModuleManager {
                     .map(Module::getName)
                     .forEach(this::uninstall);
               });
+      viewLoader.terminate(update || !newlyInstalledModules.isEmpty());
     } finally {
       this.encryptPasswords();
       this.doCleanUp();
@@ -175,6 +175,7 @@ public class ModuleManager {
       resolver.all().stream()
           .filter(m -> names.contains(m.getName()))
           .forEach(m -> viewLoader.doLast(m, true));
+      viewLoader.terminate(true);
     } finally {
       this.doCleanUp();
     }
@@ -192,6 +193,7 @@ public class ModuleManager {
       pathsToRestore.addAll(paths);
       moduleList.forEach(m -> install(m, true, false));
       moduleList.forEach(m -> viewLoader.doLast(m, true));
+      viewLoader.terminate(true);
     } finally {
       pathsToRestore.clear();
       doCleanUp(startTime);
@@ -241,6 +243,7 @@ public class ModuleManager {
           .map(Module::getName)
           .forEach(name -> install(name, update, withDemo, true));
       resolver.resolve(moduleName).stream().forEach(m -> viewLoader.doLast(m, update));
+      viewLoader.terminate(update);
     } finally {
       this.doCleanUp();
     }

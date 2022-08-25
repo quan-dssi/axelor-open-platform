@@ -957,9 +957,14 @@ function FilterFormCtrl($scope, $element, ViewService) {
           filter.operator !== 'notNull')) {
         criterion.fieldName += '.' + filter.targetName;
       } else if (/-many/.test(filter.type) && (
-          filter.operator !== 'isNull' ||
-          filter.operator !== 'notNull')) {
-        criterion.fieldName += '.id';
+          filter.operator === 'isNull' ||
+          filter.operator === 'notNull')) {
+        var jsonTypePos = criterion.fieldName.indexOf('::');
+        if (jsonTypePos >= 0) {
+          criterion.fieldName = criterion.fieldName.substring(0, jsonTypePos);
+        } else {
+          criterion.fieldName += '.id';
+        }
       }
 
       if (criterion.operator == "true") {
@@ -1195,6 +1200,7 @@ ui.directive('uiFilterBox', function() {
         domains: [],
         customs: []
       };
+      $scope.handler.current = current;
 
       function acceptCustom(filter) {
 
@@ -1224,6 +1230,7 @@ ui.directive('uiFilterBox', function() {
         var selected = live ? !filter.$selected : filter.$selected;
         var selection = isCustom ? current.customs : current.domains;
         var applyAll = (handler.schema||{}).customSearch === false;
+        current.live = live;
 
         if (live) {
           $scope.onClear();

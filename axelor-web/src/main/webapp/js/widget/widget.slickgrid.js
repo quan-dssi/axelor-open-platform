@@ -1115,9 +1115,34 @@ Grid.prototype._doInit = function(view) {
     }
   });
 
+  function combineCriteria(criteria, other) {
+    if (_.isEmpty(criteria.criteria)) {
+      return other;
+    }
+    criteria.criteria = [{
+      operator: criteria.operator,
+      criteria: criteria.criteria
+    }, {
+      operator: other.operator,
+      criteria: other.criteria
+    }];
+    criteria.operator = "and";
+    return criteria;
+  }
+
   scope.$on("on:advance-filter", function (e, criteria) {
     if (e.targetScope === handler) {
-      that.advanceFilter = criteria;
+      that.advanceFilter = angular.copy(criteria);
+      var current = e.targetScope.current || {};
+      // If filter was applied live, custom filters are already combined into criteria
+      if (!current.live && !_.isEmpty(current.customs)) {
+        var customCriteria = {operator: 'and'};
+        current.customs
+          .map(function (custom) { return custom.criteria; } )
+          .filter(function (custom) { return !_.isEmpty(custom); })
+          .forEach(function (custom) { customCriteria = combineCriteria(customCriteria, custom); });
+        that.advanceFilter = combineCriteria(that.advanceFilter, customCriteria);
+      }
     }
   });
 
@@ -1593,20 +1618,24 @@ Grid.prototype.onKeyDown = function (e) {
 
   if (e.isDefaultPrevented()) return;
   if (e.keyCode === 27) { // ESCAPE
+    e.stopPropagation();
     that.cancelEdit({focus: true, cancel: true});
     return;
   }
   if (e.keyCode === 13) { // ENTER
     if (this.isEditActive()) {
+      e.stopPropagation();
+      var isLastRow = args.row === grid.getDataLength() - 1;
       var promise = that.commitEdit();
       promise.then(function () {
-        if (that.canAdd() && args.row === grid.getDataLength() - 1) {
+        if (that.canAdd() && isLastRow) {
           that.addNewRow();
         }
       }, function () {
         that.focusInvalidCell(grid.getActiveCell());
       });
     } else if (this.isCellEditable(args.row, args.cell)){
+      e.stopPropagation();
       that.showEditor();
     }
   }
@@ -1928,6 +1957,10 @@ Grid.prototype.addNewRow = function () {
     var item = _.extend({ id: 0 }, formScope.defaultValues);
 
     data.addItem(item);
+
+    // Data length can increase by more than 1 (in case of column grouping).
+    cell.row = grid.getDataLength() - 1;
+
     grid.invalidateRow(data.length);
     grid.focus();
     grid.setActiveCell(cell.row, cell.cell);
@@ -2176,9 +2209,10 @@ Grid.prototype._showEditor = function (activeCell) {
       confirm.keydown(function (e) {
         if (e.keyCode === 13) {
           e.preventDefault();
+          var isLastRow = args.row === grid.getDataLength() - 1;
           doCommit().then(function () {
             var args = grid.getActiveCell();
-            if (that.canAdd() && args.row === grid.getDataLength() - 1) {
+            if (that.canAdd() && isLastRow) {
               that.addNewRow();
             }
           });
@@ -2225,7 +2259,7 @@ Grid.prototype._showEditor = function (activeCell) {
           || elem.hasClass("ui-widget-overlay"));
       }
 
-      this.checkAutoCommit = function (e) {
+      function checkAutoCommit(e) {
         if (cannotCommit($(e.target))) {
           return;
         }
@@ -2234,8 +2268,15 @@ Grid.prototype._showEditor = function (activeCell) {
         } else {
           that.cancelEdit();
         }
-        $("body").off("click", this.checkAutoCommit);
       }
+
+      this.scope.$on('on:grid-edit-start', function () {
+        that.scope.$timeout(function () { $(document).on('click', checkAutoCommit); });
+      });
+
+      this.scope.$on('on:grid-edit-end', function () {
+        $(document).off('click', checkAutoCommit);
+      });
     }
 
     form.on('keydown', '.form-item-container :input:first', function (e) {
@@ -2315,10 +2356,6 @@ Grid.prototype._showEditor = function (activeCell) {
   setTimeout(function () {
     form.css('visibility', '');
   }, 100)
-
-  if (this.checkAutoCommit) {
-    $("body").on("click", this.checkAutoCommit);
-  }
 
   var unwatchScrollbar = this.scope.$watch(function () {
     return viewPort.prop("clientHeight");

@@ -74,7 +74,7 @@ function BaseCardsCtrl(type, $scope, $element, ViewService) {
       $scope.showEditor(record, readonly);
       return true;
     }
-  }
+  };
 
   $scope.onRefresh = function () {
     return $scope.filter({});
@@ -237,7 +237,7 @@ ui.controller("KanbanCtrl", ['$scope', '$element', 'ViewService', 'ActionService
     if (columnBy.target) {
       $scope.toColumnValue = function (value) {
         return { id : value };
-      }
+      };
     }
   };
 
@@ -294,7 +294,7 @@ ui.controller("KanbanCtrl", ['$scope', '$element', 'ViewService', 'ActionService
     return doSave();
   };
 
-  $scope.onRefresh = function () {
+  $scope.onRefresh = $scope.reload = function () {
     $scope.$broadcast("on:refresh");
   };
 
@@ -343,7 +343,7 @@ ui.directive('uiKanban', function () {
   return {
     replace: true,
     template:
-      "<div class='kanban-view row-fluid' ng-clsss='::schema.css'>" +
+      "<div class='kanban-view row-fluid' ng-class='::schema.css'>" +
         "<div class='kanban-column' ng-repeat='column in ::columns' ui-kanban-column>" +
           "<h3>{{::column.title}}</h3>" +
           "<div class='input-group' ng-if='::column.canCreate' ng-show='hasPermission(\"create\")'>" +
@@ -377,7 +377,7 @@ ui.directive('uiKanban', function () {
           "</div>" +
         "</div>" +
       "</div>"
-  }
+  };
 });
 
 ui.directive('uiKanbanColumn', ["ActionService", function (ActionService) {
@@ -389,13 +389,22 @@ ui.directive('uiKanbanColumn', ["ActionService", function (ActionService) {
       var ds = scope._dataSource._new(scope._model);
       var view = scope.schema;
       var elemMore = element.children(".kanban-more");
+      var columnFilter = {
+        operator: 'and',
+        criteria: [{
+          fieldName: view.columnBy,
+          operator: '=',
+          value: scope.toColumnValue(scope.column.value)
+        }]
+      };
 
       ds._context = _.extend({}, scope._dataSource._context);
-      ds._context[view.columnBy] = scope.toColumnValue(scope.column.value);
-      ds._page.limit = view.limit || 20;
+      ds._page.limit = view.limit || parseInt((scope._viewParams.params || {}).limit) || 20;
+      ds._sortBy = [view.sequenceBy];
+      ds._domain = scope._dataSource._domain;
+      ds._filter = columnFilter;
 
-      var domain = "self." + view.columnBy + " = :" + view.columnBy;
-      ds._domain = scope._dataSource._domain ? scope._dataSource._domain + " AND " + domain : domain;
+      if (!scope.prepareFilter) scope.prepareFilter = function (options) { return options; };
 
       scope.records = [];
 
@@ -403,13 +412,34 @@ ui.directive('uiKanbanColumn', ["ActionService", function (ActionService) {
         element.toggleClass('empty', scope.isEmpty());
       }
 
+      function combineCriteria(first, second) {
+        first = angular.copy(first) || {};
+        second = angular.copy(second) || {};
+        if (_.isEmpty(first.criteria)) {
+          first.criteria = second.criteria;
+          first.operator = 'and';
+        } else if (!_.isEmpty(second.criteria)) {
+          first.criteria = [{
+            criteria: first.criteria,
+            operator: first.operator
+          }, {
+            criteria: second.criteria,
+            operator: second.operator
+          }];
+          first.operator = 'and';
+        }
+        return first;
+      }
+
       function fetch(options) {
         var opts = _.extend({
-          action: scope._viewAction,
-          offset: 0,
-          sortBy: [view.sequenceBy],
           fields: _.pluck(scope.fields, 'name')
-        }, options);
+        }, scope.prepareFilter(options));
+
+        if (options) {
+          opts.filter = combineCriteria(opts.filter, columnFilter);
+        }
+
         elemMore.hide();
         var promise = ds.search(opts);
         promise.success(function (records) {
@@ -523,7 +553,7 @@ ui.directive('uiCards', function () {
   return {
     link: function (scope, element, attrs) {
       var onRefresh = scope.onRefresh;
-      scope.onRefresh = function () {
+      scope.onRefresh = scope.reload = function () {
         scope.records = null;
         return onRefresh.apply(scope, arguments);
       };
@@ -781,13 +811,18 @@ function linker(scope, element, atts) {
   var _filter = scope.filter;
   var _action = scope._viewAction;
 
-  scope.filter = function (options) {
+  scope.prepareFilter = function (options) {
     var opts = _.extend({}, options, {
       action: _action
     });
     if (scope._context && scope.formPath && scope.getContext) {
       opts.context = _.extend({id: null}, scope._context, scope.getContext());
     }
+    return opts;
+  };
+
+  scope.filter = function (options) {
+    var opts = scope.prepareFilter(options);
     return _filter.call(scope, opts);
   };
 

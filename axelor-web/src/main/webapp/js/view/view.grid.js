@@ -577,6 +577,15 @@ function GridViewCtrl($scope, $element) {
       options.archived = advance.archived;
     }
 
+    var current = $scope.current || {};
+    if (!_.isEmpty(current.domains)) {
+      criteria._domains = criteria._domains || [];
+      _.each(current.domains, function (currentDomain) {
+        if (!_.findWhere(criteria._domains, {domain: currentDomain.domain})) {
+          criteria._domains.push(currentDomain);
+        }
+      });
+    }
     return ds.search(options).then(fixPage);
   };
 
@@ -754,7 +763,10 @@ function GridViewCtrl($scope, $element) {
       var recordItems = $scope.record[$scope.field.name];
       if (recordItems && recordItems.length === items.length) {
         _.each(recordItems, function (recordItem, index) {
-          recordItem.selected = items[index].selected;
+          // Some items might be IDs
+          if (_.isObject(recordItem)) {
+            recordItem.selected = items[index].selected;
+          }
         });
       }
     }
